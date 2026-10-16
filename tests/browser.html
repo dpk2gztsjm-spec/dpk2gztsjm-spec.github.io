@@ -1,0 +1,61 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><base href="../"><title>GJ Browser Test</title>
+<style>body{margin:0}#browser-test-result{display:none}</style></head><body>
+<div id="app"></div><pre id="browser-test-result">RUNNING</pre>
+<script type="module">
+import '../src/main.js';
+import {getProfile,getRecord} from '../src/db.js';
+const result=document.querySelector('#browser-test-result');
+let passed=0;
+const assert=(condition,msg)=>{if(!condition)throw new Error(msg);passed++};
+const waitFor=async(fn,timeout=6500)=>{let now=Date.now();while(Date.now()-now<timeout){const ret=fn();if(ret)return ret;await new Promise(r=>setTimeout(r,35));}throw new Error('Timed out waiting for '+String(fn).slice(0,80));};
+const click=(selector)=>{const el=document.querySelector(selector);if(!el)throw new Error('No '+selector);el.click()};
+const input=(selector,value)=>{const el=document.querySelector(selector);if(!el)throw new Error('No '+selector);el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));};
+try {
+  if(sessionStorage.getItem('gj-test-reload')==='yes'){
+    await waitFor(()=>document.querySelector('.hero-card'));
+    assert(!document.querySelector('form#profile-form'),'onboarding not shown after reload');
+    assert(document.querySelectorAll('.nav-link').length===4,'four nav tabs on reload');
+    assert((await getProfile()).heightCm===175,'persisted changed height after reload');
+    result.textContent='PASS: 3 reload verification checks';
+    result.dataset.status='pass';
+  } else {
+    await waitFor(()=>document.querySelector('form#profile-form'));
+    assert(document.querySelectorAll('.nav-link').length===0,'nav hidden until profile');
+    assert(document.querySelectorAll('[data-select="gender"]').length===3,'3 gender choices');
+    assert(document.querySelectorAll('[data-select="handedness"]').length===2,'2 hand choices');
+    click('.save-button');
+    await waitFor(()=>document.querySelector('.field-error'));
+    assert(document.querySelectorAll('.field-error').length===2,'2 required field errors');
+    click('[data-select="gender"][data-value="undisclosed"]');
+    click('[data-select="handedness"][data-value="left"]');
+    input('#height','174');
+    input('#handicap','8.5');
+    input('#notes','テスト登録');
+    click('.save-button');
+    await waitFor(()=>document.querySelector('.hero-card'));
+    assert(document.querySelectorAll('.nav-link').length===4,'four nav tabs');
+    assert((await getProfile()).gender==='undisclosed','gender persisted');
+    assert((await getProfile()).handedness==='left','hand persisted');
+    assert((await getProfile()).heightCm===174,'height persisted');
+    assert((await getProfile()).playNotes==='テスト登録','notes persisted');
+    assert((await getRecord('settings','app')).schemaVersion===1,'settings migration v1');
+    click('a[href="#tips"]');
+    await waitFor(()=>document.querySelector('.tips-index'));
+    assert(document.querySelectorAll('.tip-category-tile').length===9,'9 category Tips dictionary');
+    click('.profile-button');
+    await waitFor(()=>document.querySelector('form#profile-form'));
+    assert(document.querySelector('#height').value==='174','editable field populated');
+    input('#height','175');
+    click('.save-button');
+    await waitFor(()=>document.querySelector('.alert-success'));
+    assert((await getProfile()).heightCm===175,'edit persisted');
+    assert(document.querySelector('.alert-success').textContent.includes('保存しました'),'save success shown');
+    assert(!document.querySelector('[data-field="skillLevel"]'),'no proficiency field');
+    sessionStorage.setItem('gj-test-reload','yes');
+    result.textContent='PASS: '+passed+' first-pass checks; reloading for persistence checks';
+    result.dataset.status='intermediate';
+    setTimeout(()=>location.replace('./tests/browser.html#home'),100);
+  }
+} catch (err){result.dataset.status='fail';result.textContent='FAIL: '+err.stack;console.error(err)}
+</script>
+</body></html>
